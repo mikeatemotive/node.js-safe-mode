@@ -2302,8 +2302,9 @@ Handle<Object> SetupProcessObject(int argc, char *argv[]) {
 
   NODE_SET_METHOD(process, "hrtime", Hrtime);
 
-  NODE_SET_METHOD(process, "dlopen", DLOpen);
-
+  if (!safe_mode) {
+    NODE_SET_METHOD(process, "dlopen", DLOpen);
+  }
   NODE_SET_METHOD(process, "uptime", Uptime);
   NODE_SET_METHOD(process, "memoryUsage", MemoryUsage);
   NODE_SET_METHOD(process, "uvCounters", UVCounters);
