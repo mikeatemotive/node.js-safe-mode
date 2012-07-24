@@ -1,0 +1,32 @@
+#! /bin/sh
+# Driver script for safe-mode tests
+scriptdir=`dirname $0`
+tmpdir=/tmp
+testdir=$tmpdir/safe-mode-tests-$$
+
+if  [ "$1" == "-keep" ]
+then
+    rm -rf $testdir
+else
+    rm -r $tmpdir/safe-mode-tests-*
+fi
+mkdir $testdir
+mkdir $testdir/good
+mkdir $testdir/bad
+cp $scriptdir/client.js $testdir/good
+cp $scriptdir/server.js $testdir/good
+cd $testdir/good
+
+bad_tcp_port=10001
+good_tcp_port=10002
+bad_udp_port=10003
+good_udp_port=10004
+uds_name=/tmp/pipe
+
+node_flags="--safe-mode --restricted-outgoing-addresses 127.0.0.1  --allowed-outgoing-ports $good_tcp_port,$good_udp_port" 
+node_args="$good_tcp_port $good_udp_port $bad_tcp_port $bad_udp_port $uds_name" 
+node $node_flags server.js $node_args > ../server.log 2>&1 &
+serverPid=$!
+sleep 5
+node $node_flags client.js $node_args
+kill -9 $serverPid

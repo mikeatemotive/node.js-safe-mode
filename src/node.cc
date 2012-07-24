@@ -130,6 +130,10 @@ static int max_stack_size = 0;
 
 // used by C++ modules as well
 bool no_deprecation = false;
+bool safe_mode = false;
+    
+static char **restrictedAddrs = NULL;
+static int *allowedPorts = NULL;
 
 static uv_check_t check_tick_watcher;
 static uv_prepare_t prepare_tick_watcher;
@@ -1445,7 +1449,11 @@ static Handle<Value> Umask(const Arguments& args) {
   return scope.Close(Uint32::New(old));
 }
 
-
+static Handle<Value> IsSafeMode(const Arguments& args) {
+  HandleScope scope;
+ return scope.Close(Boolean::New(safe_mode));
+}
+       
 #ifdef __POSIX__
 
 static Handle<Value> GetUid(const Arguments& args) {
@@ -2268,21 +2276,26 @@ Handle<Object> SetupProcessObject(int argc, char *argv[]) {
   NODE_SET_METHOD(process, "_needTickCallback", NeedTickCallback);
   NODE_SET_METHOD(process, "reallyExit", Exit);
   NODE_SET_METHOD(process, "abort", Abort);
-  NODE_SET_METHOD(process, "chdir", Chdir);
+  if (!safe_mode) {
+    NODE_SET_METHOD(process, "chdir", Chdir);
+  }
   NODE_SET_METHOD(process, "cwd", Cwd);
-
-  NODE_SET_METHOD(process, "umask", Umask);
-
+  if (!safe_mode) {
+    NODE_SET_METHOD(process, "umask", Umask);
+  }
 #ifdef __POSIX__
   NODE_SET_METHOD(process, "getuid", GetUid);
-  NODE_SET_METHOD(process, "setuid", SetUid);
+  if (!safe_mode) {
+    NODE_SET_METHOD(process, "setuid", SetUid);
 
-  NODE_SET_METHOD(process, "setgid", SetGid);
+    NODE_SET_METHOD(process, "setgid", SetGid);
+  }
   NODE_SET_METHOD(process, "getgid", GetGid);
 #endif // __POSIX__
 
-  NODE_SET_METHOD(process, "_kill", Kill);
-
+  if (!safe_mode) {
+    NODE_SET_METHOD(process, "_kill", Kill);
+  }
   NODE_SET_METHOD(process, "_debugProcess", DebugProcess);
   NODE_SET_METHOD(process, "_debugPause", DebugPause);
   NODE_SET_METHOD(process, "_debugEnd", DebugEnd);
@@ -2297,6 +2310,8 @@ Handle<Object> SetupProcessObject(int argc, char *argv[]) {
 
   NODE_SET_METHOD(process, "binding", Binding);
 
+  NODE_SET_METHOD(process, "isSafeMode", IsSafeMode);
+  
   return process;
 }
 
@@ -2459,6 +2474,77 @@ static void ParseArgs(int argc, char **argv) {
     } else if (strcmp(arg, "--trace-deprecation") == 0) {
       argv[i] = const_cast<char*>("");
       trace_deprecation = true;
+    } else if (strcmp(arg, "--safe-mode") == 0) {
+      safe_mode = true;
+      argv[i] = const_cast<char*>("");
+    } else if (strcmp(arg, "--restricted-outgoing-addresses") == 0) {
+      if (argc <= i + 1) {
+        fprintf(stderr, 
+          "Error: --restricted-outgoing-addresses requires an argument\n");
+        exit(1);
+      }
+      argv[i] = const_cast<char*>("");
+      char *list = argv[++i];
+      int numCommas = 0;
+      char *p = list;
+      while (1) {
+        if (p = strchr(p, ',')) {
+          numCommas++;
+          p++;
+        }
+        else {
+          break;
+        }
+      }
+      restrictedAddrs = new char*[numCommas+2];
+      char **addr = restrictedAddrs;
+      char *token = strtok(list, ",");
+      *(addr++) = token;
+      while (1) {
+        token = strtok(NULL, ",");
+        if (token) {
+          *(addr++) = token;
+        }
+        else {
+          *(addr++) = NULL;
+          break;
+        }
+      }
+      argv[i] = const_cast<char*>("");
+    } else if (strcmp(arg, "--allowed-outgoing-ports") == 0) {
+      if (argc <= i + 1) {
+        fprintf(stderr, 
+          "Error: --allowed-outgoing-ports requires an argument\n");
+        exit(1);
+      }
+      argv[i] = const_cast<char*>("");
+      char *list = argv[++i];
+      int numCommas = 0;
+      char *p = list;
+      while (1) {
+        if (p = strchr(p, ',')) {
+          numCommas++;
+          p++;
+        }
+        else {
+          break;
+        }
+      }
+      allowedPorts = new int[numCommas+2];
+      int *addr = allowedPorts;
+      char *token = strtok(list, ",");
+      *(addr++) = atoi(token);
+      while (1) {
+        token = strtok(NULL, ",");
+        if (token) {
+          *(addr++) = atoi(token);
+        }
+        else {
+          *(addr++) = -1;
+          break;
+        }
+      }
+      argv[i] = const_cast<char*>("");
     } else if (argv[i][0] != '-') {
       break;
     }
@@ -2933,5 +3019,36 @@ int Start(int argc, char *argv[]) {
   return 0;
 }
 
+bool AllowHostAndPort(char *addr, int port) {
+  if (!restrictedAddrs) {
+    return true;
+  }
 
+  bool matched = false;  
+  for (char **ra = restrictedAddrs; *ra; ra++) {
+    if (!strcmp(addr, *ra)) {
+      matched = true;
+      break;
+    }
+  }
+  if (!matched) {
+    return true;
+  }
+
+  if (allowedPorts) {
+    for (int *ap = allowedPorts; *ap > 0; ap++) {
+      if (port == *ap) {
+        return true;
+      }
+    }
+  }
+      
+  return false;
+}
+    
+void SetErrorCode(uv_err_code errCode) {
+  uv_err_t err = uv__new_artificial_error(errCode);
+  SetErrno(err);
+}
+  
 }  // namespace node

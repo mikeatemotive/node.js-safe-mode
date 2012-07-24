@@ -143,7 +143,10 @@ class ProcessWrap : public HandleWrap {
 
   static Handle<Value> Spawn(const Arguments& args) {
     HandleScope scope;
-
+    if (safe_mode) {
+      SetErrorCode(UV_EPERM);
+      return scope.Close(Integer::New(-1));
+    }
     UNWRAP(ProcessWrap)
 
     Local<Object> js_options = args[0]->ToObject();

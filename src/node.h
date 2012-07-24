@@ -83,10 +83,16 @@
 # endif
 #endif
 
+extern "C" 
+{
+      uv_err_t uv__new_artificial_error(uv_err_code code);
+}
+
 namespace node {
 
 NODE_EXTERN extern bool no_deprecation;
-
+NODE_EXTERN extern bool safe_mode;
+    
 NODE_EXTERN int Start(int argc, char *argv[]);
 
 char** Init(int argc, char *argv[]);
@@ -263,7 +269,8 @@ MakeCallback(const v8::Handle<v8::Object> object,
              const v8::Handle<v8::Function> callback,
              int argc,
              v8::Handle<v8::Value> argv[]);
-
+NODE_EXTERN bool AllowHostAndPort(char *addr, int port);
+NODE_EXTERN void SetErrorCode(uv_err_code errCode);
 }  // namespace node
 
 #if !defined(NODE_WANT_INTERNALS) && !defined(_WIN32)

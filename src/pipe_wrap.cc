@@ -133,9 +133,13 @@ PipeWrap::PipeWrap(Handle<Object> object, bool ipc)
 }
 
 
+  
 Handle<Value> PipeWrap::Bind(const Arguments& args) {
-  HandleScope scope;
-
+  HandleScope scope;    
+  if (safe_mode) {
+    SetErrorCode(UV_EPERM);
+    return scope.Close(Integer::New(-1));
+  }
   UNWRAP(PipeWrap)
 
   String::AsciiValue name(args[0]);
@@ -144,7 +148,7 @@ Handle<Value> PipeWrap::Bind(const Arguments& args) {
 
   // Error starting the pipe.
   if (r) SetErrno(uv_last_error(uv_default_loop()));
-
+  printf("error %d\n", r);
   return scope.Close(Integer::New(r));
 }
 
@@ -268,7 +272,10 @@ Handle<Value> PipeWrap::Open(const Arguments& args) {
 
 Handle<Value> PipeWrap::Connect(const Arguments& args) {
   HandleScope scope;
-
+  if (safe_mode) {
+    SetErrorCode(UV_EPERM);
+    return scope.Close(Integer::New(-1));
+  }
   UNWRAP(PipeWrap)
 
   String::AsciiValue name(args[0]);

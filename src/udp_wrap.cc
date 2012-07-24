@@ -245,6 +245,10 @@ Handle<Value> UDPWrap::DoSend(const Arguments& args, int family) {
 
   const unsigned short port = args[3]->Uint32Value();
   String::Utf8Value address(args[4]);
+    if (!AllowHostAndPort(*address, port)) {
+        SetErrorCode(UV_EPERM);
+        return Null(); 
+    }
 
   switch (family) {
   case AF_INET:
