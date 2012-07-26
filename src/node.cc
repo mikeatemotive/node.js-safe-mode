@@ -2135,7 +2135,12 @@ static void DebugPortSetter(Local<String> property,
 static Handle<Value> DebugProcess(const Arguments& args);
 static Handle<Value> DebugPause(const Arguments& args);
 static Handle<Value> DebugEnd(const Arguments& args);
-
+  
+Handle<Value> ThrowSafeModeViolation(const Arguments& args)
+{
+  return ThrowException(Exception::Error(String::New("operation not permitted in safe mode")));
+}
+  
 Handle<Object> SetupProcessObject(int argc, char *argv[]) {
   HandleScope scope;
 
@@ -2276,35 +2281,25 @@ Handle<Object> SetupProcessObject(int argc, char *argv[]) {
   NODE_SET_METHOD(process, "_needTickCallback", NeedTickCallback);
   NODE_SET_METHOD(process, "reallyExit", Exit);
   NODE_SET_METHOD(process, "abort", Abort);
-  if (!safe_mode) {
-    NODE_SET_METHOD(process, "chdir", Chdir);
-  }
+  NODE_SET_UNSAFE_METHOD(process, "chdir", Chdir);
   NODE_SET_METHOD(process, "cwd", Cwd);
-  if (!safe_mode) {
-    NODE_SET_METHOD(process, "umask", Umask);
-  }
+  NODE_SET_UNSAFE_METHOD(process, "umask", Umask);
 #ifdef __POSIX__
   NODE_SET_METHOD(process, "getuid", GetUid);
-  if (!safe_mode) {
-    NODE_SET_METHOD(process, "setuid", SetUid);
+  NODE_SET_UNSAFE_METHOD(process, "setuid", SetUid);
 
-    NODE_SET_METHOD(process, "setgid", SetGid);
-  }
+  NODE_SET_UNSAFE_METHOD(process, "setgid", SetGid);
   NODE_SET_METHOD(process, "getgid", GetGid);
 #endif // __POSIX__
 
-  if (!safe_mode) {
-    NODE_SET_METHOD(process, "_kill", Kill);
-  }
+  NODE_SET_UNSAFE_METHOD(process, "_kill", Kill);
   NODE_SET_METHOD(process, "_debugProcess", DebugProcess);
   NODE_SET_METHOD(process, "_debugPause", DebugPause);
   NODE_SET_METHOD(process, "_debugEnd", DebugEnd);
 
   NODE_SET_METHOD(process, "hrtime", Hrtime);
 
-  if (!safe_mode) {
-    NODE_SET_METHOD(process, "dlopen", DLOpen);
-  }
+  NODE_SET_UNSAFE_METHOD(process, "dlopen", DLOpen);
   NODE_SET_METHOD(process, "uptime", Uptime);
   NODE_SET_METHOD(process, "memoryUsage", MemoryUsage);
   NODE_SET_METHOD(process, "uvCounters", UVCounters);

@@ -382,10 +382,10 @@ static bool isRelativeFilename(const char * name) {
   return isRelative;;
 }
 
-static Handle<Value> returnPermissionError(const Arguments& args) {
-  if (args[1]->IsFunction()) {
+static Handle<Value> returnPermissionError(const Arguments& args, int index = 1) {
+  if (args[index]->IsFunction()) {
     HandleScope scope;
-    Local<Function> cb = Local<Function>::Cast(args[1]);
+    Local<Function> cb = Local<Function>::Cast(args[index]);
     const unsigned argc = 1;
     Local<Value> argv[argc] = { Exception::Error(String::New("operation not permitted")) };
     cb->Call(Context::GetCurrent()->Global(), argc, argv);
@@ -540,6 +540,9 @@ static Handle<Value> Rename(const Arguments& args) {
   
   String::Utf8Value old_path(args[0]);
   String::Utf8Value new_path(args[1]);
+  if (safe_mode && (!isRelativeFilename(*old_path) || !isRelativeFilename(*new_path))) {
+    return returnPermissionError(args,2);
+  }
 
   if (args[2]->IsFunction()) {
     ASYNC_CALL(rename, args[2], *old_path, *new_path)
@@ -610,7 +613,10 @@ static Handle<Value> Unlink(const Arguments& args) {
   if (!args[0]->IsString()) return TYPE_ERROR("path must be a string");
 
   String::Utf8Value path(args[0]);
-
+  if (safe_mode && !isRelativeFilename(*path)) {
+    return returnPermissionError(args);
+  }
+  
   if (args[1]->IsFunction()) {
     ASYNC_CALL(unlink, args[1], *path)
   } else {
@@ -626,7 +632,10 @@ static Handle<Value> RMDir(const Arguments& args) {
   if (!args[0]->IsString()) return TYPE_ERROR("path must be a string");
 
   String::Utf8Value path(args[0]);
-
+  if (safe_mode && !isRelativeFilename(*path)) {
+    return returnPermissionError(args);
+  }
+  
   if (args[1]->IsFunction()) {
     ASYNC_CALL(rmdir, args[1], *path)
   } else {
@@ -643,6 +652,9 @@ static Handle<Value> MKDir(const Arguments& args) {
   }
 
   String::Utf8Value path(args[0]);
+  if (safe_mode && !isRelativeFilename(*path)) {
+    return returnPermissionError(args);
+  }
   int mode = static_cast<int>(args[1]->Int32Value());
 
   if (args[2]->IsFunction()) {
@@ -868,6 +880,9 @@ static Handle<Value> Chmod(const Arguments& args) {
     return THROW_BAD_ARGS;
   }
   String::Utf8Value path(args[0]);
+  if (safe_mode && !isRelativeFilename(*path)) {
+    return returnPermissionError(args, 2);
+  }
   int mode = static_cast<int>(args[1]->Int32Value());
 
   if(args[2]->IsFunction()) {
@@ -966,6 +981,9 @@ static Handle<Value> UTimes(const Arguments& args) {
   if (!args[2]->IsNumber()) return TYPE_ERROR("mtime must be a number");
 
   const String::Utf8Value path(args[0]);
+  if (safe_mode && !isRelativeFilename(*path)) {
+    return returnPermissionError(args, 3);
+  }
   const double atime = static_cast<double>(args[1]->NumberValue());
   const double mtime = static_cast<double>(args[2]->NumberValue());
 
@@ -1009,39 +1027,30 @@ void File::Initialize(Handle<Object> target) {
   NODE_SET_METHOD(target, "read", Read);
   NODE_SET_METHOD(target, "fdatasync", Fdatasync);
   NODE_SET_METHOD(target, "fsync", Fsync);
-  if (!safe_mode) {
-    NODE_SET_METHOD(target, "rename", Rename);
-  }
+  NODE_SET_METHOD(target, "rename", Rename);
   NODE_SET_METHOD(target, "truncate", Truncate);
-  if (!safe_mode) {
-    NODE_SET_METHOD(target, "rmdir", RMDir);
-    NODE_SET_METHOD(target, "mkdir", MKDir);
-    NODE_SET_METHOD(target, "sendfile", SendFile);
-  }
+  NODE_SET_METHOD(target, "rmdir", RMDir);
+  NODE_SET_METHOD(target, "mkdir", MKDir);
+  NODE_SET_METHOD(target, "sendfile", SendFile);
   NODE_SET_METHOD(target, "readdir", ReadDir);
   NODE_SET_METHOD(target, "stat", Stat);
   NODE_SET_METHOD(target, "lstat", LStat);
-  NODE_SET_METHOD(target, "fstat", FStat);
-  if (!safe_mode) {  
-    NODE_SET_METHOD(target, "link", Link);
-    NODE_SET_METHOD(target, "symlink", Symlink);
-  }
+  NODE_SET_METHOD(target, "fstat", FStat);  
+  NODE_SET_UNSAFE_METHOD(target, "link", Link);
+  NODE_SET_UNSAFE_METHOD(target, "symlink", Symlink);
   NODE_SET_METHOD(target, "readlink", ReadLink);
-  if (!safe_mode) {
-    NODE_SET_METHOD(target, "unlink", Unlink);
-  }
+  NODE_SET_METHOD(target, "unlink", Unlink);
   NODE_SET_METHOD(target, "write", Write);
-  if (!safe_mode) {
-    NODE_SET_METHOD(target, "chmod", Chmod);
-    NODE_SET_METHOD(target, "fchmod", FChmod);
-    //NODE_SET_METHOD(target, "lchmod", LChmod);
+  NODE_SET_METHOD(target, "chmod", Chmod);
+  NODE_SET_METHOD(target, "fchmod", FChmod);
+  //NODE_SET_UNSAFE_METHOD(target, "lchmod", LChmod);
 
-    NODE_SET_METHOD(target, "chown", Chown);
-    NODE_SET_METHOD(target, "fchown", FChown);
-    //NODE_SET_METHOD(target, "lchown", LChown);
-    NODE_SET_METHOD(target, "utimes", UTimes);
-    NODE_SET_METHOD(target, "futimes", FUTimes);
-  }
+  NODE_SET_UNSAFE_METHOD(target, "chown", Chown);
+  NODE_SET_UNSAFE_METHOD(target, "fchown", FChown);
+  //NODE_SET_UNSAFE_METHOD(target, "lchown", LChown);
+  NODE_SET_METHOD(target, "utimes", UTimes);
+  NODE_SET_METHOD(target, "futimes", FUTimes);
+
 
   errno_symbol = NODE_PSYMBOL("errno");
   encoding_symbol = NODE_PSYMBOL("node:encoding");
