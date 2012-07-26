@@ -15,7 +15,7 @@ assert.equal(fs.readFileSync("file1.txt"), data);
 var stats = fs.statSync(".");
 stats = fs.statSync(fname);
 assert.throws(function() {
-     fs.statSync("..");
+     fs.statSync("../nosuch");
 });
 assert.throws(function() {
      fs.statSync("../bad");

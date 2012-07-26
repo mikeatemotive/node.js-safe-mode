@@ -345,15 +345,27 @@ Local<Object> BuildStatsObject(const uv_statbuf_t* s) {
   return scope.Close(stats);
 }
 
+static const char *removeUNC(const char *name) {
+#ifdef _WIN32
+  if (strstr(name, "\\\\?\\") == name) {
+    return name + 4;
+  }
+#endif
+  return name;
+}
+
 static bool isAncestor(const char *name) {
   char cwd[1025];
   uv_cwd(cwd, 1024);
-  return strstr(cwd, name) == cwd; 
+  name = removeUNC(name);
+  bool isAncestor = strstr(cwd, name) == cwd; 
+  return isAncestor;
 }
   
 static bool isRelativeFilename(const char * name) {
   char cwd[1025];
   uv_cwd(cwd, 1024);
+  name = removeUNC(name);
   bool isRelative = true;
   if (strstr(name, cwd) == name) {
     isRelative = true;
