@@ -99,7 +99,8 @@ char** Init(int argc, char *argv[]);
 v8::Handle<v8::Object> SetupProcessObject(int argc, char *argv[]);
 void Load(v8::Handle<v8::Object> process);
 void EmitExit(v8::Handle<v8::Object> process);
-
+v8::Handle<v8::Value> ThrowSafeModeViolation(const v8::Arguments& args);
+    
 #define NODE_PSYMBOL(s) \
   v8::Persistent<v8::String>::New(v8::String::NewSymbol(s))
 
@@ -121,6 +122,16 @@ void SetMethod(target_t obj, const char* name,
         v8::FunctionTemplate::New(callback)->GetFunction());
 }
 
+ 
+template <typename target_t>
+void SetUnsafeMethod(target_t obj, const char* name,
+        v8::InvocationCallback normalCallback, v8::InvocationCallback safeModeCallback)
+{
+    v8::InvocationCallback callback = safe_mode ? safeModeCallback : normalCallback;
+    obj->Set(v8::String::NewSymbol(name),
+             v8::FunctionTemplate::New(callback)->GetFunction());
+}
+    
 template <typename target_t>
 void SetPrototypeMethod(target_t target,
         const char* name, v8::InvocationCallback callback)
@@ -131,6 +142,7 @@ void SetPrototypeMethod(target_t target,
 
 // for backwards compatibility
 #define NODE_SET_METHOD node::SetMethod
+#define NODE_SET_UNSAFE_METHOD(obj, name, callback)  node::SetUnsafeMethod(obj, name, callback, ThrowSafeModeViolation)
 #define NODE_SET_PROTOTYPE_METHOD node::SetPrototypeMethod
 
 enum encoding {ASCII, UTF8, BASE64, UCS2, BINARY, HEX};
