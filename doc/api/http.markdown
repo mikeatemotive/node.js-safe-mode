@@ -265,7 +265,16 @@ you can use the `require('querystring').parse` function, or pass
 
 ### request.headers
 
-Read only.
+Read only map of header names and values. Header names are lower-cased.
+Example:
+
+    // Prints something like:
+    //
+    // { 'user-agent': 'curl/7.22.0',
+    //   host: '127.0.0.1:8000',
+    //   accept: '*/*' }
+    console.log(request.headers);
+
 
 ### request.trailers
 
@@ -354,7 +363,7 @@ which has been transmitted are equal or not.
 ### response.statusCode
 
 When using implicit headers (not calling `response.writeHead()` explicitly), this property
-controls the status code that will be send to the client when the headers get
+controls the status code that will be sent to the client when the headers get
 flushed.
 
 Example:
@@ -426,6 +435,10 @@ header information and the first body to the client. The second time
 data, and sends that separately. That is, the response is buffered up to the
 first chunk of body.
 
+Returns `true` if the entire data was flushed successfully to the kernel
+buffer. Returns `false` if all or part of the data was queued in user memory.
+`'drain'` will be emitted when the buffer is again free.
+
 ### response.addTrailers(headers)
 
 This method adds HTTP trailing headers (a header but at the end of the
@@ -448,7 +461,7 @@ emit trailers, with a list of the header fields in its value. E.g.,
 ### response.end([data], [encoding])
 
 This method signals to the server that all of the response headers and body
-has been sent; that server should consider this message complete.
+have been sent; that server should consider this message complete.
 The method, `response.end()`, MUST be called on each
 response.
 

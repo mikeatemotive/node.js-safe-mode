@@ -7,14 +7,13 @@ var cbCalled = false
   , rm = require("rimraf")
   , itWorked = false
   , path = require("path")
-  , ini = require("./ini.js")
   , wroteLogFile = false
   , exitCode = 0
 
 
 process.on("exit", function (code) {
   // console.error("exit", code)
-  if (!ini.resolved) return
+  if (!npm.config.loaded) return
   if (code) itWorked = false
   if (itWorked) log.info("ok")
   else {
@@ -69,8 +68,9 @@ function exit (code, noLog) {
 
 
 function errorHandler (er) {
+  var printStack = false
   // console.error("errorHandler", er)
-  if (!ini.resolved) {
+  if (!npm.config.loaded) {
     // logging won't work unless we pretend that it's ready
     er = er || new Error("Exit prior to config file resolving.")
     console.error(er.stack || er.message)
@@ -93,13 +93,13 @@ function errorHandler (er) {
   var m = er.code || er.message.match(/^(?:Error: )?(E[A-Z]+)/)
   if (m && !er.code) er.code = m
 
-  var didStack = false
   switch (er.code) {
   case "ECONNREFUSED":
     log.error("", er)
     log.error("", ["\nIf you are behind a proxy, please make sure that the"
               ,"'proxy' config is set properly.  See: 'npm help config'"
               ].join("\n"))
+    printStack = true
     break
 
   case "EACCES":
@@ -107,6 +107,7 @@ function errorHandler (er) {
     log.error("", er)
     log.error("", ["\nPlease try running this command again as root/Administrator."
               ].join("\n"))
+    printStack = true
     break
 
   case "ELIFECYCLE":
@@ -196,6 +197,12 @@ function errorHandler (er) {
               ,"Move it away, and try again."].join("\n"))
     break
 
+  case "ENEEDAUTH":
+    log.error("need auth", [er.message
+              ,"You need to authorize this machine using `npm adduser`"
+              ].join("\n"))
+    break
+
   case "ENOTSUP":
     if (er.required) {
       log.error("notsup", [er.message
@@ -209,13 +216,13 @@ function errorHandler (er) {
     } // else passthrough
 
   default:
-    didStack = true
     log.error("", er.stack || er.message || er)
     log.error("", ["If you need help, you may report this log at:"
                   ,"    <http://github.com/isaacs/npm/issues>"
                   ,"or email it to:"
                   ,"    <npm-@googlegroups.com>"
                   ].join("\n"))
+    printStack = false
     break
   }
 
@@ -246,7 +253,7 @@ function errorHandler (er) {
     ].forEach(function (k) {
       var v = er[k]
       if (k === "stack") {
-        if (didStack) return
+        if (!printStack) return
         if (!v) v = er.message
       }
       if (!v) return

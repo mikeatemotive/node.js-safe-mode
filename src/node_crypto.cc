@@ -938,23 +938,20 @@ int Connection::SelectSNIContextCallback_(SSL *s, int *ad, void* arg) {
     }
     p->servername_ = Persistent<String>::New(String::New(servername));
 
-    // Call sniCallback_ and use it's return value as context
-    if (!p->sniCallback_.IsEmpty()) {
+    // Call the SNI callback and use its return value as context
+    if (!p->sniObject_.IsEmpty()) {
       if (!p->sniContext_.IsEmpty()) {
         p->sniContext_.Dispose();
       }
 
       // Get callback init args
       Local<Value> argv[1] = {*p->servername_};
-      Local<Function> callback = *p->sniCallback_;
 
       // Call it
-      //
-      // XXX There should be an object connected to this that
-      // we can attach a domain onto.
-      Local<Value> ret;
-      ret = Local<Value>::New(MakeCallback(Context::GetCurrent()->Global(),
-                                           callback, ARRAY_SIZE(argv), argv));
+      Local<Value> ret = Local<Value>::New(MakeCallback(p->sniObject_,
+                                                        "onselect",
+                                                        ARRAY_SIZE(argv),
+                                                        argv));
 
       // If ret is SecureContext
       if (secure_context_constructor->HasInstance(ret)) {
@@ -1547,7 +1544,8 @@ Handle<Value> Connection::VerifyError(const Arguments& args) {
     // We requested a certificate and they did not send us one.
     // Definitely an error.
     // XXX is this the right error message?
-    return scope.Close(String::New("UNABLE_TO_GET_ISSUER_CERT"));
+    return scope.Close(Exception::Error(
+          String::New("UNABLE_TO_GET_ISSUER_CERT")));
   }
   X509_free(peer_cert);
 
@@ -1673,7 +1671,7 @@ Handle<Value> Connection::VerifyError(const Arguments& args) {
       break;
   }
 
-  return scope.Close(s);
+  return scope.Close(Exception::Error(s));
 }
 
 
@@ -1773,11 +1771,11 @@ Handle<Value> Connection::SetSNICallback(const Arguments& args) {
   }
 
   // Release old handle
-  if (!ss->sniCallback_.IsEmpty()) {
-    ss->sniCallback_.Dispose();
+  if (!ss->sniObject_.IsEmpty()) {
+    ss->sniObject_.Dispose();
   }
-  ss->sniCallback_ = Persistent<Function>::New(
-                            Local<Function>::Cast(args[0]));
+  ss->sniObject_ = Persistent<Object>::New(Object::New());
+  ss->sniObject_->Set(String::New("onselect"), args[0]);
 
   return True();
 }
@@ -4200,7 +4198,7 @@ struct pbkdf2_req {
   size_t iter;
   char* key;
   size_t keylen;
-  Persistent<Function> callback;
+  Persistent<Object> obj;
 };
 
 void
@@ -4235,16 +4233,13 @@ EIO_PBKDF2After(uv_work_t* req) {
     argv[1] = Local<Value>::New(Undefined());
   }
 
-  // XXX There should be an object connected to this that
-  // we can attach a domain onto.
-  MakeCallback(Context::GetCurrent()->Global(),
-               request->callback,
-               ARRAY_SIZE(argv), argv);
+  MakeCallback(request->obj, "ondone", ARRAY_SIZE(argv), argv);
 
   delete[] request->pass;
   delete[] request->salt;
   delete[] request->key;
-  request->callback.Dispose();
+  request->obj.Dispose();
+  request->obj.Clear();
 
   delete request;
 }
@@ -4266,6 +4261,7 @@ PBKDF2(const Arguments& args) {
   Local<Function> callback;
   pbkdf2_req* request = NULL;
   uv_work_t* req = NULL;
+  Persistent<Object> obj;
 
   if (args.Length() != 5) {
     type_error = "Bad parameter";
@@ -4323,7 +4319,8 @@ PBKDF2(const Arguments& args) {
     goto err;
   }
 
-  callback = Local<Function>::Cast(args[4]);
+  obj = Persistent<Object>::New(Object::New());
+  obj->Set(String::New("ondone"), args[4]);
 
   request = new pbkdf2_req;
   request->err = 0;
@@ -4334,7 +4331,7 @@ PBKDF2(const Arguments& args) {
   request->iter = iter;
   request->key = key;
   request->keylen = keylen;
-  request->callback = Persistent<Function>::New(callback);
+  request->obj = obj;
 
   req = new uv_work_t();
   req->data = request;
@@ -4353,7 +4350,7 @@ typedef int (*RandomBytesGenerator)(unsigned char* buf, int size);
 
 struct RandomBytesRequest {
   ~RandomBytesRequest();
-  Persistent<Function> callback_;
+  Persistent<Object> obj_;
   unsigned long error_; // openssl error code or zero
   uv_work_t work_req_;
   size_t size_;
@@ -4362,10 +4359,9 @@ struct RandomBytesRequest {
 
 
 RandomBytesRequest::~RandomBytesRequest() {
-  if (!callback_.IsEmpty()) {
-    callback_.Dispose();
-    callback_.Clear();
-  }
+  if (obj_.IsEmpty()) return;
+  obj_.Dispose();
+  obj_.Clear();
 }
 
 
@@ -4426,12 +4422,7 @@ void RandomBytesAfter(uv_work_t* work_req) {
   HandleScope scope;
   Local<Value> argv[2];
   RandomBytesCheck(req, argv);
-
-  // XXX There should be an object connected to this that
-  // we can attach a domain onto.
-  MakeCallback(Context::GetCurrent()->Global(),
-               req->callback_,
-               ARRAY_SIZE(argv), argv);
+  MakeCallback(req->obj_, "ondone", ARRAY_SIZE(argv), argv);
 
   delete req;
 }
@@ -4456,15 +4447,15 @@ Handle<Value> RandomBytes(const Arguments& args) {
   req->size_ = size;
 
   if (args[1]->IsFunction()) {
-    Local<Function> callback_v = Local<Function>(Function::Cast(*args[1]));
-    req->callback_ = Persistent<Function>::New(callback_v);
+    req->obj_ = Persistent<Object>::New(Object::New());
+    req->obj_->Set(String::New("ondone"), args[1]);
 
     uv_queue_work(uv_default_loop(),
                   &req->work_req_,
                   RandomBytesWork<generator>,
                   RandomBytesAfter<generator>);
 
-    return Undefined();
+    return req->obj_;
   }
   else {
     Local<Value> argv[2];

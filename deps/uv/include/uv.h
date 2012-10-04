@@ -57,12 +57,6 @@ extern "C" {
 
 #include "ares.h"
 
-#if !defined(_SSIZE_T_) && !defined(_SSIZE_T_DEFINED)
-  typedef intptr_t ssize_t;
-# define _SSIZE_T_
-# define _SSIZE_T_DEFINED
-#endif
-
 #if defined(__unix__) || defined(__POSIX__) || defined(__APPLE__)
 # include "uv-private/uv-unix.h"
 #else
@@ -126,8 +120,9 @@ extern "C" {
   XX( 53, ENOTEMPTY, "directory not empty") \
   XX( 54, ENOSPC, "no space left on device") \
   XX( 55, EIO, "i/o error") \
-  XX( 56, EROFS, "read-only file system" ) \
-  XX( 57, ENODEV, "no such device" )
+  XX( 56, EROFS, "read-only file system") \
+  XX( 57, ENODEV, "no such device") \
+  XX( 58, ESPIPE, "invalid seek") \
 
 
 #define UV_ERRNO_GEN(val, name, s) UV_##name = val,
@@ -1099,8 +1094,7 @@ UV_EXTERN int uv_async_send(uv_async_t* async);
 /*
  * uv_timer_t is a subclass of uv_handle_t.
  *
- * Wraps libev's ev_timer watcher. Used to get woken up at a specified time
- * in the future.
+ * Used to get woken up at a specified time in the future.
  */
 struct uv_timer_s {
   UV_HANDLE_FIELDS
@@ -1109,8 +1103,22 @@ struct uv_timer_s {
 
 UV_EXTERN int uv_timer_init(uv_loop_t*, uv_timer_t* timer);
 
-UV_EXTERN int uv_timer_start(uv_timer_t* timer, uv_timer_cb cb,
-    int64_t timeout, int64_t repeat);
+/*
+ * Start the timer. `timeout` and `repeat` are in milliseconds.
+ *
+ * If timeout is zero, the callback fires on the next tick of the event loop.
+ *
+ * If repeat is non-zero, the callback fires first after timeout milliseconds
+ * and then repeatedly after repeat milliseconds.
+ *
+ * timeout and repeat are signed integers but that will change in a future
+ * version of libuv. Don't pass in negative values, you'll get a nasty surprise
+ * when that change becomes effective.
+ */
+UV_EXTERN int uv_timer_start(uv_timer_t* timer,
+                             uv_timer_cb cb,
+                             int64_t timeout,
+                             int64_t repeat);
 
 UV_EXTERN int uv_timer_stop(uv_timer_t* timer);
 
@@ -1122,10 +1130,10 @@ UV_EXTERN int uv_timer_stop(uv_timer_t* timer);
 UV_EXTERN int uv_timer_again(uv_timer_t* timer);
 
 /*
- * Set the repeat value. Note that if the repeat value is set from a timer
- * callback it does not immediately take effect. If the timer was non-repeating
- * before, it will have been stopped. If it was repeating, then the old repeat
- * value will have been used to schedule the next timeout.
+ * Set the repeat value in milliseconds. Note that if the repeat value is set
+ * from a timer callback it does not immediately take effect. If the timer was
+ * non-repeating before, it will have been stopped. If it was repeating, then
+ * the old repeat value will have been used to schedule the next timeout.
  */
 UV_EXTERN void uv_timer_set_repeat(uv_timer_t* timer, int64_t repeat);
 
@@ -1410,8 +1418,8 @@ struct uv_fs_s {
   uv_fs_cb cb;
   ssize_t result;
   void* ptr;
-  char* path;
-  int errorno;
+  const char* path;
+  uv_err_code errorno;
   UV_FS_PRIVATE_FIELDS
 };
 
@@ -1524,14 +1532,17 @@ struct uv_fs_event_s {
 struct uv_fs_poll_s {
   UV_HANDLE_FIELDS
   /* Private, don't touch. */
-  int busy_polling; /* TODO(bnoordhuis) Fold into flags field. */
-  unsigned int interval;
-  uint64_t start_time;
-  char* path;
-  uv_fs_poll_cb poll_cb;
-  uv_timer_t timer_handle;
-  uv_fs_t* fs_req;
-  uv_statbuf_t statbuf;
+  void* poll_ctx;
+  /* v0.8 ABI compatibility */
+  char padding[sizeof(int)
+             + sizeof(unsigned int)
+             + sizeof(uint64_t)
+             + sizeof(char*)
+             + sizeof(uv_fs_poll_cb)
+             + sizeof(uv_timer_t)
+             + sizeof(uv_fs_t*)
+             + sizeof(uv_statbuf_t)
+             - sizeof(void*)];
 };
 
 UV_EXTERN int uv_fs_poll_init(uv_loop_t* loop, uv_fs_poll_t* handle);
