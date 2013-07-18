@@ -24,8 +24,13 @@
 
 #include <stdio.h>
 #include <stddef.h>
-#include <stdint.h>
 #include <stdlib.h>
+
+#if defined(_MSC_VER) && _MSC_VER < 1600
+# include "uv-private/stdint-msvc2008.h"
+#else
+# include <stdint.h>
+#endif
 
 #define TEST_PORT 9123
 #define TEST_PORT_2 9124
@@ -74,8 +79,6 @@ typedef enum {
     abort();                                              \
   } while (0)
 
-
-
 /* Have our own assert, so we are sure it does not get optimized away in
  * a release build.
  */
@@ -91,19 +94,53 @@ typedef enum {
   }                                                       \
  } while (0)
 
+/* This macro cleans up the main loop. This is used to avoid valgrind
+ * warnings about memory being "leaked" by the main event loop.
+ */
+#define MAKE_VALGRIND_HAPPY()  \
+  uv_loop_delete(uv_default_loop())
 
 /* Just sugar for wrapping the main() for a task or helper. */
-#define TEST_IMPL(name)   \
-  int run_test_##name()
+#define TEST_IMPL(name)                                                       \
+  int run_test_##name(void);                                                  \
+  int run_test_##name(void)
 
-#define BENCHMARK_IMPL(name)  \
-  int run_benchmark_##name()
+#define BENCHMARK_IMPL(name)                                                  \
+  int run_benchmark_##name(void);                                             \
+  int run_benchmark_##name(void)
 
-#define HELPER_IMPL(name)  \
-  int run_helper_##name()
-
+#define HELPER_IMPL(name)                                                     \
+  int run_helper_##name(void);                                                \
+  int run_helper_##name(void)
 
 /* Pause the calling thread for a number of milliseconds. */
 void uv_sleep(int msec);
+
+/* Format big numbers nicely. WARNING: leaks memory. */
+const char* fmt(double d);
+
+/* Reserved test exit codes. */
+enum test_status {
+  TEST_OK = 0,
+  TEST_TODO,
+  TEST_SKIP
+};
+
+#define RETURN_OK()                                                           \
+  do {                                                                        \
+    return TEST_OK;                                                           \
+  } while (0)
+
+#define RETURN_TODO(explanation)                                              \
+  do {                                                                        \
+    LOGF("%s\n", explanation);                                                \
+    return TEST_TODO;                                                         \
+  } while (0)
+
+#define RETURN_SKIP(explanation)                                              \
+  do {                                                                        \
+    LOGF("%s\n", explanation);                                                \
+    return TEST_SKIP;                                                         \
+  } while (0)
 
 #endif /* TASK_H_ */

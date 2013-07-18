@@ -15,7 +15,7 @@
     'configurations': {
       'Debug': {
         'defines': [ 'DEBUG', '_DEBUG' ],
-        'cflags': [ '-g', '-O0' ],
+        'cflags': [ '-g', '-O0', '-fwrapv' ],
         'msvs_settings': {
           'VCCLCompilerTool': {
             'target_conditions': [
@@ -36,6 +36,7 @@
         },
         'xcode_settings': {
           'GCC_OPTIMIZATION_LEVEL': '0',
+          'OTHER_CFLAGS': [ '-Wno-strict-aliasing' ],
         },
         'conditions': [
           ['OS != "win"', {
@@ -45,7 +46,13 @@
       },
       'Release': {
         'defines': [ 'NDEBUG' ],
-        'cflags': [ '-O3', '-fomit-frame-pointer', '-fdata-sections', '-ffunction-sections' ],
+        'cflags': [
+          '-O3',
+          '-fstrict-aliasing',
+          '-fomit-frame-pointer',
+          '-fdata-sections',
+          '-ffunction-sections',
+        ],
         'msvs_settings': {
           'VCCLCompilerTool': {
             'target_conditions': [
@@ -117,10 +124,20 @@
           # POSIX names
           '_CRT_NONSTDC_NO_DEPRECATE',
         ],
+        'target_conditions': [
+          ['target_arch=="x64"', {
+            'msvs_configuration_platform': 'x64'
+          }]
+        ]
       }],
       [ 'OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
         'cflags': [ '-Wall' ],
         'cflags_cc': [ '-fno-rtti', '-fno-exceptions' ],
+        'target_conditions': [
+          ['_type=="static_library"', {
+            'standalone_static_library': 1, # disable thin archive which needs binutils >= 2.19
+          }],
+        ],
         'conditions': [
           [ 'host_arch != target_arch and target_arch=="ia32"', {
             'cflags': [ '-m32' ],
@@ -158,7 +175,7 @@
           'PREBINDING': 'NO',                       # No -Wl,-prebind
           'USE_HEADERMAP': 'NO',
           'OTHER_CFLAGS': [
-            '-fno-strict-aliasing',
+            '-fstrict-aliasing',
           ],
           'WARNING_CFLAGS': [
             '-Wall',
@@ -167,12 +184,25 @@
             '-Wno-unused-parameter',
           ],
         },
+        'conditions': [
+          ['target_arch=="ia32"', {
+            'xcode_settings': {'ARCHS': ['i386']},
+          }],
+          ['target_arch=="x64"', {
+            'xcode_settings': {'ARCHS': ['x86_64']},
+          }],
+        ],
         'target_conditions': [
           ['_type!="static_library"', {
             'xcode_settings': {'OTHER_LDFLAGS': ['-Wl,-search_paths_first']},
           }],
         ],
       }],
+     ['OS=="solaris"', {
+       'cflags': [ '-fno-omit-frame-pointer' ],
+       # pull in V8's postmortem metadata
+       'ldflags': [ '-Wl,-z,allextract' ]
+     }],
     ],
   },
 }

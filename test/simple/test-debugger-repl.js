@@ -19,80 +19,11 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+var repl = require('./helper-debugger-repl.js');
 
-var common = require('../common');
-var assert = require('assert');
-var spawn = require('child_process').spawn;
-var debug = require('_debugger');
+repl.startDebugger('breakpoints.js');
 
-var port = common.PORT + 1337;
-
-var script = common.fixturesDir + '/breakpoints.js';
-
-var child = spawn(process.execPath, ['debug', '--port=' + port, script]);
-
-console.error('./node', 'debug', '--port=' + port, script);
-
-var buffer = '';
-child.stdout.setEncoding('utf-8');
-child.stdout.on('data', function(data) {
-  data = (buffer + data.toString()).split(/\n/g);
-  buffer = data.pop();
-  data.forEach(function(line) {
-    child.emit('line', line);
-  });
-});
-child.stderr.pipe(process.stdout);
-
-var expected = [];
-
-child.on('line', function(line) {
-  line = line.replace(/^(debug> )+/, 'debug> ');
-  console.error('line> ' + line);
-  assert.ok(expected.length > 0, 'Got unexpected line: ' + line);
-
-  var expectedLine = expected[0].lines.shift();
-  assert.ok(line.match(expectedLine) !== null, line + ' != ' + expectedLine);
-
-  if (expected[0].lines.length === 0) {
-    var callback = expected[0].callback;
-    expected.shift();
-    callback && callback();
-  }
-});
-
-function addTest(input, output) {
-  function next() {
-    if (expected.length > 0) {
-      var res = child.stdin.write(expected[0].input + '\n'),
-          callback;
-
-      if (!expected[0].lines) {
-        callback = expected[0].callback;
-        expected.shift();
-      }
-
-      if (callback) {
-        if (res !== true) {
-          child.stdin.on('drain', callback);
-        } else {
-          process.nextTick(callback);
-        }
-      }
-    } else {
-      finish();
-    }
-  };
-  expected.push({input: input, lines: output, callback: next});
-}
-
-// Initial lines
-addTest(null, [
-  /listening on port \d+/,
-  /connecting... ok/,
-  /break in .*:1/,
-  /1/, /2/, /3/
-]);
+var addTest = repl.addTest;
 
 // Next
 addTest('n', [
@@ -101,7 +32,7 @@ addTest('n', [
 ]);
 
 // Watch
-addTest('watch("\'x\'"), true', [/true/]);
+addTest('watch("\'x\'")');
 
 // Continue
 addTest('c', [
@@ -118,7 +49,7 @@ addTest('watchers', [
 ]);
 
 // Unwatch
-addTest('unwatch("\'x\'"), true', [/true/]);
+addTest('unwatch("\'x\'")');
 
 // Step out
 addTest('o', [
@@ -143,53 +74,4 @@ addTest('c', [
   /\d/, /\d/, /\d/, /\d/, /\d/
 ]);
 
-addTest('c', [
-  /break in .*breakpoints.js:\d+/,
-  /\d/, /\d/, /\d/, /\d/, /\d/
-]);
-
-addTest('repl', [
-  /Press Ctrl \+ C to leave debug repl/
-]);
-
-addTest('now', [
-  /\w* \w* \d* \d* \d*:\d*:\d* GMT[+-]\d* (\w*)/
-]);
-
-function finish() {
-  process.exit(0);
-}
-
-function quit() {
-  if (quit.called) return;
-  quit.called = true;
-  child.stdin.write('quit');
-}
-
-setTimeout(function() {
-  var err = 'Timeout';
-  if (expected.length > 0 && expected[0].lines) {
-    err = err + '. Expected: ' + expected[0].lines.shift();
-  }
-  quit();
-  child.kill('SIGKILL');
-
-  // give the sigkill time to work.
-  setTimeout(function() {
-    throw new Error(err);
-  }, 100);
-
-}, 5000);
-
-process.once('uncaughtException', function(e) {
-  quit();
-  console.error(e.toString());
-  process.exit(1);
-});
-
-process.on('exit', function(code) {
-  quit();
-  if (code === 0) {
-    assert.equal(expected.length, 0);
-  }
-});
+addTest('quit', []);

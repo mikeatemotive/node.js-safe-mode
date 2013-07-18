@@ -33,42 +33,54 @@
 #endif
 
 #ifdef __POSIX__
-# include <unistd.h>  // gethostname, sysconf
+# include <netdb.h>         // MAXHOSTNAMELEN on Solaris.
+# include <unistd.h>        // gethostname, sysconf
+# include <sys/param.h>     // MAXHOSTNAMELEN on Linux and the BSDs.
 # include <sys/utsname.h>
+#endif
+
+// Add Windows fallback.
+#ifndef MAXHOSTNAMELEN
+# define MAXHOSTNAMELEN 256
 #endif
 
 namespace node {
 
 using namespace v8;
 
+static Handle<Value> GetEndianness(const Arguments& args) {
+  HandleScope scope;
+  int i = 1;
+  bool big = (*(char *)&i) == 0;
+  Local<String> endianness = String::New(big ? "BE" : "LE");
+  return scope.Close(endianness);
+}
+
 static Handle<Value> GetHostname(const Arguments& args) {
   HandleScope scope;
-  char s[255];
-  int r = gethostname(s, 255);
+  char buf[MAXHOSTNAMELEN + 1];
 
-  if (r < 0) {
+  if (gethostname(buf, sizeof(buf))) {
 #ifdef __POSIX__
     return ThrowException(ErrnoException(errno, "gethostname"));
 #else // __MINGW32__
     return ThrowException(ErrnoException(WSAGetLastError(), "gethostname"));
 #endif // __MINGW32__
   }
+  buf[sizeof(buf) - 1] = '\0';
 
-  return scope.Close(String::New(s));
+  return scope.Close(String::New(buf));
 }
 
 static Handle<Value> GetOSType(const Arguments& args) {
   HandleScope scope;
 
 #ifdef __POSIX__
-  char type[256];
   struct utsname info;
-
-  uname(&info);
-  strncpy(type, info.sysname, strlen(info.sysname));
-  type[strlen(info.sysname)] = 0;
-
-  return scope.Close(String::New(type));
+  if (uname(&info) < 0) {
+    return ThrowException(ErrnoException(errno, "uname"));
+  }
+  return scope.Close(String::New(info.sysname));
 #else // __MINGW32__
   return scope.Close(String::New("Windows_NT"));
 #endif
@@ -76,16 +88,15 @@ static Handle<Value> GetOSType(const Arguments& args) {
 
 static Handle<Value> GetOSRelease(const Arguments& args) {
   HandleScope scope;
-  char release[256];
 
 #ifdef __POSIX__
   struct utsname info;
-
-  uname(&info);
-  strncpy(release, info.release, strlen(info.release));
-  release[strlen(info.release)] = 0;
-
+  if (uname(&info) < 0) {
+    return ThrowException(ErrnoException(errno, "uname"));
+  }
+  return scope.Close(String::New(info.release));
 #else // __MINGW32__
+  char release[256];
   OSVERSIONINFO info;
   info.dwOSVersionInfoSize = sizeof(info);
 
@@ -95,9 +106,9 @@ static Handle<Value> GetOSRelease(const Arguments& args) {
 
   sprintf(release, "%d.%d.%d", static_cast<int>(info.dwMajorVersion),
       static_cast<int>(info.dwMinorVersion), static_cast<int>(info.dwBuildNumber));
+  return scope.Close(String::New(release));
 #endif
 
-  return scope.Close(String::New(release));
 }
 
 static Handle<Value> GetCPUInfo(const Arguments& args) {
@@ -128,7 +139,8 @@ static Handle<Value> GetCPUInfo(const Arguments& args) {
 
     Local<Object> cpu_info = Object::New();
     cpu_info->Set(String::New("model"), String::New(cpu_infos[i].model));
-    cpu_info->Set(String::New("speed"), Integer::New(cpu_infos[i].speed));
+    cpu_info->Set(String::New("speed"),
+                  Integer::New(cpu_infos[i].speed));
     cpu_info->Set(String::New("times"), times_info);
     (*cpus)->Set(i,cpu_info);
   }
@@ -198,9 +210,8 @@ static Handle<Value> GetInterfaceAddresses(const Arguments& args) {
 
   uv_err_t err = uv_interface_addresses(&interfaces, &count);
 
-  if (err.code != UV_OK) {
-    return Undefined();
-  }
+  if (err.code != UV_OK)
+    return ThrowException(UVException(err.code, "uv_interface_addresses"));
 
   ret = Object::New();
 
@@ -227,8 +238,10 @@ static Handle<Value> GetInterfaceAddresses(const Arguments& args) {
     o = Object::New();
     o->Set(String::New("address"), String::New(ip));
     o->Set(String::New("family"), family);
-    o->Set(String::New("internal"), interfaces[i].is_internal ?
-	True() : False());
+
+    const bool internal = interfaces[i].is_internal;
+    o->Set(String::New("internal"),
+           internal ? True() : False());
 
     ifarr->Set(ifarr->Length(), o);
   }
@@ -242,6 +255,7 @@ static Handle<Value> GetInterfaceAddresses(const Arguments& args) {
 void OS::Initialize(v8::Handle<v8::Object> target) {
   HandleScope scope;
 
+  NODE_SET_METHOD(target, "getEndianness", GetEndianness);
   NODE_SET_METHOD(target, "getHostname", GetHostname);
   NODE_SET_METHOD(target, "getLoadAvg", GetLoadAvg);
   NODE_SET_METHOD(target, "getUptime", GetUptime);

@@ -198,7 +198,7 @@ static void uv__fast_poll_process_poll_req(uv_loop_t* loop, uv_poll_t* handle,
   if ((handle->events & ~(handle->submitted_events_1 |
       handle->submitted_events_2)) != 0) {
     uv__fast_poll_submit_poll_req(loop, handle);
-  } else if ((handle->flags & UV_HANDLE_CLOSING) &&
+  } else if ((handle->flags & UV__HANDLE_CLOSING) &&
              handle->submitted_events_1 == 0 &&
              handle->submitted_events_2 == 0) {
     uv_want_endgame(loop, (uv_handle_t*) handle);
@@ -208,7 +208,7 @@ static void uv__fast_poll_process_poll_req(uv_loop_t* loop, uv_poll_t* handle,
 
 static int uv__fast_poll_set(uv_loop_t* loop, uv_poll_t* handle, int events) {
   assert(handle->type == UV_POLL);
-  assert(!(handle->flags & UV_HANDLE_CLOSING));
+  assert(!(handle->flags & UV__HANDLE_CLOSING));
   assert((events & ~(UV_READABLE | UV_WRITABLE)) == 0);
 
   handle->events = events;
@@ -230,7 +230,7 @@ static int uv__fast_poll_set(uv_loop_t* loop, uv_poll_t* handle, int events) {
 
 static void uv__fast_poll_close(uv_loop_t* loop, uv_poll_t* handle) {
   handle->events = 0;
-  uv__handle_start(handle);
+  uv__handle_closing(handle);
 
   if (handle->submitted_events_1 == 0 &&
       handle->submitted_events_2 == 0) {
@@ -311,21 +311,13 @@ static SOCKET uv__fast_poll_get_peer_socket(uv_loop_t* loop,
 static DWORD WINAPI uv__slow_poll_thread_proc(void* arg) {
   uv_req_t* req = (uv_req_t*) arg;
   uv_poll_t* handle = (uv_poll_t*) req->data;
-  unsigned char events, reported_events;
+  unsigned char reported_events;
   int r;
   uv_single_fd_set_t rfds, wfds, efds;
   struct timeval timeout;
 
   assert(handle->type == UV_POLL);
   assert(req->type == UV_POLL_REQ);
-
-  if (req == &handle->poll_req_1) {
-    events = handle->submitted_events_1;
-  } else if (req == &handle->poll_req_2) {
-    events = handle->submitted_events_2;
-  } else {
-    assert(0);
-  }
 
   if (handle->events & UV_READABLE) {
     rfds.fd_count = 1;
@@ -445,7 +437,7 @@ static void uv__slow_poll_process_poll_req(uv_loop_t* loop, uv_poll_t* handle,
   if ((handle->events & ~(handle->submitted_events_1 |
       handle->submitted_events_2)) != 0) {
     uv__slow_poll_submit_poll_req(loop, handle);
-  } else if ((handle->flags & UV_HANDLE_CLOSING) &&
+  } else if ((handle->flags & UV__HANDLE_CLOSING) &&
              handle->submitted_events_1 == 0 &&
              handle->submitted_events_2 == 0) {
     uv_want_endgame(loop, (uv_handle_t*) handle);
@@ -455,7 +447,7 @@ static void uv__slow_poll_process_poll_req(uv_loop_t* loop, uv_poll_t* handle,
 
 static int uv__slow_poll_set(uv_loop_t* loop, uv_poll_t* handle, int events) {
   assert(handle->type == UV_POLL);
-  assert(!(handle->flags & UV_HANDLE_CLOSING));
+  assert(!(handle->flags & UV__HANDLE_CLOSING));
   assert((events & ~(UV_READABLE | UV_WRITABLE)) == 0);
 
   handle->events = events;
@@ -477,7 +469,7 @@ static int uv__slow_poll_set(uv_loop_t* loop, uv_poll_t* handle, int events) {
 
 static void uv__slow_poll_close(uv_loop_t* loop, uv_poll_t* handle) {
   handle->events = 0;
-  uv__handle_start(handle);
+  uv__handle_closing(handle);
 
   if (handle->submitted_events_1 == 0 &&
       handle->submitted_events_2 == 0) {
@@ -558,8 +550,6 @@ int uv_poll_init_socket(uv_loop_t* loop, uv_poll_t* handle,
   handle->poll_req_2.type = UV_POLL_REQ;
   handle->poll_req_2.data = handle;
 
-  loop->counters.poll_init++;
-
   return 0;
 }
 
@@ -607,12 +597,11 @@ void uv_poll_close(uv_loop_t* loop, uv_poll_t* handle) {
 
 
 void uv_poll_endgame(uv_loop_t* loop, uv_poll_t* handle) {
-  assert(handle->flags & UV_HANDLE_CLOSING);
+  assert(handle->flags & UV__HANDLE_CLOSING);
   assert(!(handle->flags & UV_HANDLE_CLOSED));
 
   assert(handle->submitted_events_1 == 0);
   assert(handle->submitted_events_2 == 0);
 
-  uv__handle_stop(handle);
   uv__handle_close(handle);
 }

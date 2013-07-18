@@ -500,6 +500,9 @@ class JavaScriptFrame: public StandardFrame {
     return GetNumberOfIncomingArguments();
   }
 
+  // Debugger access.
+  void SetParameterValue(int index, Object* value) const;
+
   // Check if this frame is a constructor frame invoked through 'new'.
   bool IsConstructor() const;
 
@@ -577,6 +580,8 @@ class OptimizedFrame : public JavaScriptFrame {
   inline explicit OptimizedFrame(StackFrameIterator* iterator);
 
  private:
+  JSFunction* LiteralAt(FixedArray* literal_array, int literal_id);
+
   friend class StackFrameIterator;
 };
 

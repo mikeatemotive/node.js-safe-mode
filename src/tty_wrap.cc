@@ -28,20 +28,21 @@
 
 namespace node {
 
-using v8::Object;
-using v8::Handle;
-using v8::Local;
-using v8::Persistent;
-using v8::Value;
-using v8::HandleScope;
-using v8::FunctionTemplate;
-using v8::String;
-using v8::Function;
-using v8::TryCatch;
-using v8::Context;
 using v8::Arguments;
+using v8::Context;
+using v8::Function;
+using v8::FunctionTemplate;
+using v8::Handle;
+using v8::HandleScope;
 using v8::Integer;
+using v8::Local;
+using v8::Object;
+using v8::Persistent;
+using v8::PropertyAttribute;
+using v8::String;
+using v8::TryCatch;
 using v8::Undefined;
+using v8::Value;
 
 
 void TTYWrap::Initialize(Handle<Object> target) {
@@ -53,6 +54,15 @@ void TTYWrap::Initialize(Handle<Object> target) {
   t->SetClassName(String::NewSymbol("TTY"));
 
   t->InstanceTemplate()->SetInternalFieldCount(1);
+
+  enum PropertyAttribute attributes =
+      static_cast<PropertyAttribute>(v8::ReadOnly | v8::DontDelete);
+  t->InstanceTemplate()->SetAccessor(String::New("fd"),
+                                     StreamWrap::GetFD,
+                                     NULL,
+                                     Handle<Value>(),
+                                     v8::DEFAULT,
+                                     attributes);
 
   NODE_SET_PROTOTYPE_METHOD(t, "close", HandleWrap::Close);
   NODE_SET_PROTOTYPE_METHOD(t, "unref", HandleWrap::Unref);
@@ -95,8 +105,14 @@ Handle<Value> TTYWrap::GuessHandleType(const Arguments& args) {
   uv_handle_type t = uv_guess_handle(fd);
 
   switch (t) {
+    case UV_TCP:
+      return scope.Close(String::New("TCP"));
+
     case UV_TTY:
       return scope.Close(String::New("TTY"));
+
+    case UV_UDP:
+      return scope.Close(String::New("UDP"));
 
     case UV_NAMED_PIPE:
       return scope.Close(String::New("PIPE"));
@@ -118,7 +134,12 @@ Handle<Value> TTYWrap::IsTTY(const Arguments& args) {
   HandleScope scope;
   int fd = args[0]->Int32Value();
   assert(fd >= 0);
-  return uv_guess_handle(fd) == UV_TTY ? v8::True() : v8::False();
+
+  if (uv_guess_handle(fd) == UV_TTY) {
+    return v8::True();
+  }
+
+  return v8::False();
 }
 
 

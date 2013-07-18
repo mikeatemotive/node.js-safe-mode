@@ -13,7 +13,9 @@ Typically, event names are represented by a camel-cased string, however,
 there aren't any strict restrictions on that, as any string will be accepted.
 
 Functions can then be attached to objects, to be executed when an event
-is emitted. These functions are called _listeners_.
+is emitted. These functions are called _listeners_. Inside a listener
+function, `this` refers to the `EventEmitter` that the listener was
+attached to.
 
 
 ## Class: events.EventEmitter
@@ -26,7 +28,7 @@ If there is no listener for it, then the default action is to print a stack
 trace and exit the program.
 
 All EventEmitters emit the event `'newListener'` when new listeners are
-added.
+added and `'removeListener'` when a listener is removed.
 
 ### emitter.addListener(event, listener)
 ### emitter.on(event, listener)
@@ -37,6 +39,8 @@ Adds a listener to the end of the listeners array for the specified event.
       console.log('someone connected!');
     });
 
+Returns emitter, so calls can be chained.
+
 ### emitter.once(event, listener)
 
 Adds a **one time** listener for the event. This listener is
@@ -46,6 +50,8 @@ it is removed.
     server.once('connection', function (stream) {
       console.log('Ah, we have our first user!');
     });
+
+Returns emitter, so calls can be chained.
 
 ### emitter.removeListener(event, listener)
 
@@ -59,14 +65,13 @@ Remove a listener from the listener array for the specified event.
     // ...
     server.removeListener('connection', callback);
 
+Returns emitter, so calls can be chained.
 
 ### emitter.removeAllListeners([event])
 
 Removes all listeners, or those of the specified event.
 
-Note that this will **invalidate** any arrays that have previously been
-returned by `emitter.listeners(event)`.
-
+Returns emitter, so calls can be chained.
 
 ### emitter.setMaxListeners(n)
 
@@ -85,23 +90,18 @@ Returns an array of listeners for the specified event.
     });
     console.log(util.inspect(server.listeners('connection'))); // [ [Function] ]
 
-This array **may** be a mutable reference to the same underlying list of
-listeners that is used by the event subsystem.  However, certain
-actions (specifically, removeAllListeners) will invalidate this
-reference.
-
-If you would like to get a copy of the listeners at a specific point in
-time that is guaranteed not to change, make a copy, for example by doing
-`emitter.listeners(event).slice(0)`.
-
-In a future release of node, this behavior **may** change to always
-return a copy, for consistency.  In your programs, please do not rely on
-being able to modify the EventEmitter listeners using array methods.
-Always use the 'on' method to add new listeners.
 
 ### emitter.emit(event, [arg1], [arg2], [...])
 
 Execute each of the listeners in order with the supplied arguments.
+
+Returns `true` if event had listeners, `false` otherwise.
+
+
+### Class Method: EventEmitter.listenerCount(emitter, event)
+
+Return the number of listeners for a given event.
+
 
 ### Event: 'newListener'
 
@@ -109,3 +109,11 @@ Execute each of the listeners in order with the supplied arguments.
 * `listener` {Function} The event handler function
 
 This event is emitted any time someone adds a new listener.
+
+
+### Event: 'removeListener'
+
+* `event` {String} The event name
+* `listener` {Function} The event handler function
+
+This event is emitted any time someone removes a listener.

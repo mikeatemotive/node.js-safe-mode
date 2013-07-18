@@ -171,7 +171,9 @@ def main(argv=None):
     os.chdir(opts.chdir)
 
   if opts.path:
-    os.environ['PATH'] += ':' + ':'.join(opts.path)
+    extra_path = [os.path.abspath(p) for p in opts.path]
+    extra_path = os.pathsep.join(extra_path)
+    os.environ['PATH'] += os.pathsep + extra_path
 
   if not args:
     if not opts.all:
@@ -210,6 +212,7 @@ def main(argv=None):
     format_list = {
       'freebsd7': ['make'],
       'freebsd8': ['make'],
+      'openbsd5': ['make'],
       'cygwin':   ['msvs'],
       'win32':    ['msvs', 'ninja'],
       'linux2':   ['make', 'ninja'],

@@ -36,6 +36,11 @@ static struct termios orig_termios;
 int uv_tty_init(uv_loop_t* loop, uv_tty_t* tty, int fd, int readable) {
   uv__stream_init(loop, (uv_stream_t*)tty, UV_TTY);
 
+#if defined(__APPLE__)
+  if (uv__stream_try_select((uv_stream_t*) tty, &fd))
+    return -1;
+#endif /* defined(__APPLE__) */
+
   if (readable) {
     uv__nonblock(fd, 1);
     uv__stream_open((uv_stream_t*)tty, fd, UV_STREAM_READABLE);
@@ -45,15 +50,16 @@ int uv_tty_init(uv_loop_t* loop, uv_tty_t* tty, int fd, int readable) {
     tty->flags |= UV_STREAM_BLOCKING;
   }
 
-  loop->counters.tty_init++;
   tty->mode = 0;
   return 0;
 }
 
 
 int uv_tty_set_mode(uv_tty_t* tty, int mode) {
-  int fd = tty->fd;
   struct termios raw;
+  int fd;
+
+  fd = uv__stream_fd(tty);
 
   if (mode && tty->mode == 0) {
     /* on */
@@ -104,7 +110,7 @@ fatal:
 int uv_tty_get_winsize(uv_tty_t* tty, int* width, int* height) {
   struct winsize ws;
 
-  if (ioctl(tty->fd, TIOCGWINSZ, &ws) < 0) {
+  if (ioctl(uv__stream_fd(tty), TIOCGWINSZ, &ws) < 0) {
     uv__set_sys_error(tty->loop, errno);
     return -1;
   }
@@ -117,29 +123,56 @@ int uv_tty_get_winsize(uv_tty_t* tty, int* width, int* height) {
 
 
 uv_handle_type uv_guess_handle(uv_file file) {
+  struct sockaddr sa;
   struct stat s;
+  socklen_t len;
+  int type;
 
-  if (file < 0) {
+  if (file < 0)
     return UV_UNKNOWN_HANDLE;
-  }
 
-  if (isatty(file)) {
+  if (isatty(file))
     return UV_TTY;
-  }
 
-  if (fstat(file, &s)) {
+  if (fstat(file, &s))
     return UV_UNKNOWN_HANDLE;
-  }
 
-  if (!S_ISSOCK(s.st_mode) && !S_ISFIFO(s.st_mode)) {
+  if (S_ISREG(s.st_mode))
     return UV_FILE;
+
+  if (S_ISCHR(s.st_mode))
+    return UV_FILE;  /* XXX UV_NAMED_PIPE? */
+
+  if (S_ISFIFO(s.st_mode))
+    return UV_NAMED_PIPE;
+
+  if (!S_ISSOCK(s.st_mode))
+    return UV_UNKNOWN_HANDLE;
+
+  len = sizeof(type);
+  if (getsockopt(file, SOL_SOCKET, SO_TYPE, &type, &len))
+    return UV_UNKNOWN_HANDLE;
+
+  len = sizeof(sa);
+  if (getsockname(file, &sa, &len))
+    return UV_UNKNOWN_HANDLE;
+
+  if (type == SOCK_DGRAM)
+    if (sa.sa_family == AF_INET || sa.sa_family == AF_INET6)
+      return UV_UDP;
+
+  if (type == SOCK_STREAM) {
+    if (sa.sa_family == AF_INET || sa.sa_family == AF_INET6)
+      return UV_TCP;
+    if (sa.sa_family == AF_UNIX)
+      return UV_NAMED_PIPE;
   }
 
-  return UV_NAMED_PIPE;
+  return UV_UNKNOWN_HANDLE;
 }
 
 
-void uv_tty_reset_mode() {
+void uv_tty_reset_mode(void) {
   if (orig_termios_fd >= 0) {
     tcsetattr(orig_termios_fd, TCSANOW, &orig_termios);
   }

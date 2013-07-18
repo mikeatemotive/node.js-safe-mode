@@ -79,6 +79,7 @@ uv_err_code uv_translate_sys_error(int sys_errno) {
     case EMSGSIZE: return UV_EMSGSIZE;
     case ENAMETOOLONG: return UV_ENAMETOOLONG;
     case EINVAL: return UV_EINVAL;
+    case ENETDOWN: return UV_ENETDOWN;
     case ENETUNREACH: return UV_ENETUNREACH;
     case ECONNABORTED: return UV_ECONNABORTED;
     case ELOOP: return UV_ELOOP;
@@ -96,7 +97,9 @@ uv_err_code uv_translate_sys_error(int sys_errno) {
     case ETIMEDOUT: return UV_ETIMEDOUT;
     case EXDEV: return UV_EXDEV;
     case EBUSY: return UV_EBUSY;
+#if ENOTEMPTY != EEXIST
     case ENOTEMPTY: return UV_ENOTEMPTY;
+#endif
     case ENOSPC: return UV_ENOSPC;
     case EROFS: return UV_EROFS;
     case ENOMEM: return UV_ENOMEM;

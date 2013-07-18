@@ -6,7 +6,9 @@ Node provides a tri-directional `popen(3)` facility through the
 `child_process` module.
 
 It is possible to stream data through a child's `stdin`, `stdout`, and
-`stderr` in a fully non-blocking way.
+`stderr` in a fully non-blocking way.  (Note that some programs use
+line-buffered I/O internally.  That doesn't affect node.js but it means
+data you send to the child process is not immediately consumed.)
 
 To create a child process use `require('child_process').spawn()` or
 `require('child_process').fork()`.  The semantics of each are slightly
@@ -24,6 +26,19 @@ which can be piped to and from.
 The ChildProcess class is not intended to be used directly.  Use the
 `spawn()` or `fork()` methods to create a Child Process instance.
 
+### Event:  'error'
+
+* `err` {Error Object} the error.
+
+Emitted when:
+
+1. The process could not be spawned, or
+2. The process could not be killed, or
+3. Sending a message to the child process failed for whatever reason.
+
+See also [`ChildProcess#kill()`](#child_process_child_kill_signal) and
+[`ChildProcess#send()`](#child_process_child_send_message_sendhandle).
+
 ### Event:  'exit'
 
 * `code` {Number} the exit code, if it exited normally.
@@ -40,6 +55,10 @@ Note that the child process stdio streams might still be open.
 See `waitpid(2)`.
 
 ### Event: 'close'
+
+* `code` {Number} the exit code, if it exited normally.
+* `signal` {String} the signal passed to kill the child process, if it
+  was killed by the parent.
 
 This event is emitted when the stdio streams of a child process have all
 terminated.  This is distinct from 'exit', since multiple processes
@@ -112,15 +131,22 @@ be sent `'SIGTERM'`. See `signal(7)` for a list of available signals.
     var spawn = require('child_process').spawn,
         grep  = spawn('grep', ['ssh']);
 
-    grep.on('exit', function (code, signal) {
+    grep.on('close', function (code, signal) {
       console.log('child process terminated due to receipt of signal '+signal);
     });
 
     // send SIGHUP to process
     grep.kill('SIGHUP');
 
-Note that while the function is called `kill`, the signal delivered to the child
-process may not actually kill it.  `kill` really just sends a signal to a process.
+May emit an `'error'` event when the signal cannot be delivered. Sending a
+signal to a child process that has already exited is not an error but may
+have unforeseen consequences: if the PID (the process ID) has been reassigned
+to another process, the signal will be delivered to that process instead.
+What happens next is anyone's guess.
+
+Note that while the function is called `kill`, the signal delivered to the
+child process may not actually kill it.  `kill` really just sends a signal
+to a process.
 
 See `kill(2)`
 
@@ -166,7 +192,10 @@ The `sendHandle` option to `child.send()` is for sending a TCP server or
 socket object to another process. The child will receive the object as its
 second argument to the `message` event.
 
-**send server object**
+Emits an `'error'` event if the message cannot be sent, for example because
+the child process has already exited.
+
+#### Example: sending server object
 
 Here is an example of sending a server:
 
@@ -194,7 +223,11 @@ And the child would the receive the server object as:
 Note that the server is now shared between the parent and child, this means
 that some connections will be handled by the parent and some by the child.
 
-**send socket object**
+For `dgram` servers the workflow is exactly the same.  Here you listen on
+a `message` event instead of `connection` and use `server.bind` instead of
+`server.listen`.  (Currently only supported on UNIX platforms.)
+
+#### Example: sending socket object
 
 Here is an example of sending a socket. It will spawn two children and handle
 connections with the remote address `74.125.127.100` as VIP by sending the
@@ -250,6 +283,8 @@ there is no IPC channel keeping it alive. When calling this method the
     for stdio.  (See below)
   * `env` {Object} Environment key-value pairs
   * `detached` {Boolean} The child will be a process group leader.  (See below)
+  * `uid` {Number} Sets the user identity of the process. (See setuid(2).)
+  * `gid` {Number} Sets the group identity of the process. (See setgid(2).)
 * return: {ChildProcess object}
 
 Launches a new process with the given `command`, with  command line arguments in `args`.
@@ -277,7 +312,7 @@ Example of running `ls -lh /usr`, capturing `stdout`, `stderr`, and the exit cod
       console.log('stderr: ' + data);
     });
 
-    ls.on('exit', function (code) {
+    ls.on('close', function (code) {
       console.log('child process exited with code ' + code);
     });
 
@@ -296,7 +331,7 @@ Example: A very elaborate way to run 'ps ax | grep ssh'
       console.log('ps stderr: ' + data);
     });
 
-    ps.on('exit', function (code) {
+    ps.on('close', function (code) {
       if (code !== 0) {
         console.log('ps process exited with code ' + code);
       }
@@ -311,7 +346,7 @@ Example: A very elaborate way to run 'ps ax | grep ssh'
       console.log('grep stderr: ' + data);
     });
 
-    grep.on('exit', function (code) {
+    grep.on('close', function (code) {
       if (code !== 0) {
         console.log('grep process exited with code ' + code);
       }
@@ -420,10 +455,6 @@ With `customFds` it was possible to hook up the new process' `[stdin, stdout,
 stderr]` to existing streams; `-1` meant that a new stream should be created.
 Use at your own risk.
 
-There are several internal options. In particular `stdinStream`,
-`stdoutStream`, `stderrStream`. They are for INTERNAL USE ONLY. As with all
-undocumented APIs in Node, they should not be used.
-
 See also: `child_process.exec()` and `child_process.fork()`
 
 ## child_process.exec(command, [options], callback)
@@ -431,9 +462,6 @@ See also: `child_process.exec()` and `child_process.fork()`
 * `command` {String} The command to run, with space-separated arguments
 * `options` {Object}
   * `cwd` {String} Current working directory of the child process
-  * `stdio` {Array|String} Child's stdio configuration. (See above)
-  * `customFds` {Array} **Deprecated** File descriptors for the child to use
-    for stdio.  (See above)
   * `env` {Object} Environment key-value pairs
   * `encoding` {String} (Default: 'utf8')
   * `timeout` {Number} (Default: 0)
@@ -487,9 +515,6 @@ the child process is killed.
 * `args` {Array} List of string arguments
 * `options` {Object}
   * `cwd` {String} Current working directory of the child process
-  * `stdio` {Array|String} Child's stdio configuration. (See above)
-  * `customFds` {Array} **Deprecated** File descriptors for the child to use
-    for stdio.  (See above)
   * `env` {Object} Environment key-value pairs
   * `encoding` {String} (Default: 'utf8')
   * `timeout` {Number} (Default: 0)
@@ -514,6 +539,7 @@ leaner than `child_process.exec`. It has the same options.
   * `cwd` {String} Current working directory of the child process
   * `env` {Object} Environment key-value pairs
   * `encoding` {String} (Default: 'utf8')
+  * `execPath` {String} Executable used to create the child process
 * Return: ChildProcess object
 
 This is a special case of the `spawn()` functionality for spawning Node
@@ -531,5 +557,11 @@ The child process does not automatically exit once it's done, you need to call
 These child Nodes are still whole new instances of V8. Assume at least 30ms
 startup and 10mb memory for each new Node. That is, you cannot create many
 thousands of them.
+
+The `execPath` property in the `options` object allows for a process to be
+created for the child rather than the current `node` executable. This should be
+done with care and by default will talk over the fd represented an
+environmental variable `NODE_CHANNEL_FD` on the child process. The input and
+output on this fd is expected to be line delimited JSON objects.
 
 [EventEmitter]: events.html#events_class_events_eventemitter
